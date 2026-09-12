@@ -25,8 +25,8 @@ usage() {
   echo "---------------------------------------------------------------------"
   echo " STOP"
   echo "---------------------------------------------------------------------"
-  echo "  ./start.sh --stop            Stop all services"
-  echo "  ./start.sh --reset           ⚠️  Wipe DB, storage, LocalStack, and Docker volumes"
+  echo "  ./start.sh --stop            Stop all services              (data preserved)"
+  echo "  ./start.sh --reset           ⚠️  PERMANENTLY wipe DB, storage, LocalStack, and Docker volumes"
   echo ""
   echo "---------------------------------------------------------------------"
   echo " LOGS"
@@ -102,6 +102,25 @@ free_port() {
   fi
 }
 
+# delite-agent-service also ships its own standalone docker-compose.yml (for
+# running that one repo in isolation) that claims the same host ports this
+# stack does (5432 Postgres, 6379 Redis, 8000 API, 5555 Flower) — starting
+# this stack while that one is up fails on port collision. Mirrors the guard
+# in ../delite-agent-service/start.sh, in the other direction.
+guard_against_standalone_agent_service() {
+  local running
+  running=$(docker ps --filter "name=delite-agent-service-" --format "{{.Names}}" 2>/dev/null || true)
+  if [[ -n "$running" ]]; then
+    echo "⚠️  The standalone delite-agent-service stack is already running — it uses the"
+    echo "    same ports (5432 Postgres, 6379 Redis, 8000 API, 5555 Flower) and will collide."
+    echo ""
+    echo "    Stop it first (containers only — its database and files are untouched):"
+    echo "      cd ../delite-agent-service && docker compose down"
+    echo ""
+    exit 1
+  fi
+}
+
 # Wraps `docker compose up -d` with a preflight port check for whichever
 # services are being started, so `./start.sh` always succeeds even if a
 # host-level dev server from a previous session is still holding the port.
@@ -140,32 +159,36 @@ print_urls() {
 
 case "$1" in
   --build|--build-logs)
+    guard_against_standalone_agent_service
     echo "Building images..."
     docker compose build
-    echo "Starting services..."
+    echo "Starting services (data preserved — existing volumes are reused)..."
     start_services $(services_to_start)
     [[ "$1" == "--build-logs" ]] && TAIL_LOGS=true
     ;;
   --restart|--restart-logs)
-    echo "Stopping services..."
+    guard_against_standalone_agent_service
+    echo "Stopping services — containers only, database and files are preserved..."
     docker compose down
     echo "Rebuilding images..."
     docker compose build
-    echo "Starting services..."
+    echo "Starting services (data preserved — existing volumes are reused)..."
     start_services $(services_to_start)
     [[ "$1" == "--restart-logs" ]] && TAIL_LOGS=true
     ;;
   --stop)
-    echo "Stopping services..."
+    echo "Stopping services — containers only, database and files are preserved..."
     docker compose down
-    echo "All services stopped."
+    echo "All services stopped. Data untouched — run ./start.sh to bring it all back."
     exit 0
     ;;
   --reset)
-    echo "⚠️  This will DELETE the database, all storage files, LocalStack state, and Docker volumes."
+    guard_against_standalone_agent_service
+    echo "⚠️  This will PERMANENTLY DELETE the database, all storage files, LocalStack"
+    echo "    state, and Docker volumes — unlike --stop/--restart, this does NOT preserve data."
     read -r -p "Are you sure? (yes/N) " confirm
     if [[ "$confirm" != "yes" ]]; then
-      echo "Aborted."
+      echo "Aborted — nothing was touched."
       exit 0
     fi
     echo "Stopping services and wiping volumes..."
@@ -184,11 +207,13 @@ case "$1" in
     exit 0
     ;;
   --backend-only)
+    guard_against_standalone_agent_service
     echo "Starting backend services..."
     start_services $BACKEND_SERVICES
     ;;
   --logs)
-    echo "Starting services..."
+    guard_against_standalone_agent_service
+    echo "Starting services (data preserved — existing volumes are reused)..."
     start_services $(services_to_start)
     ;;
   --help|-h)
@@ -196,7 +221,8 @@ case "$1" in
     exit 0
     ;;
   "")
-    echo "Starting services..."
+    guard_against_standalone_agent_service
+    echo "Starting services (data preserved — existing volumes are reused)..."
     start_services $(services_to_start)
     ;;
   *)
