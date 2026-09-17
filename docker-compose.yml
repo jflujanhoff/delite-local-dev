@@ -101,6 +101,9 @@ services:
       # ../delite-agent-service/docker-compose.yml's backend/celery_worker services.
       - STORAGE_ROOT=/storage
       - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/delite_hr
+      # No Docker access in this container by design (see sandbox-runner
+      # below) — the sandbox tool calls that service over HTTP instead.
+      - SANDBOX_RUNNER_URL=http://sandbox-runner:8100
     volumes:
       - ../delite-agent-service/backend:/app/backend
       - ../delite-agent-service/storage:/storage
@@ -114,6 +117,32 @@ services:
         condition: service_healthy
       ministack-init:
         condition: service_completed_successfully
+
+  # The only service in this stack with Docker access — everything else
+  # calls it over HTTP (backend/agent/tools/sandbox/client.py), never gets
+  # the socket itself. See backend/Dockerfile.sandbox_runner and
+  # backend/sandbox_runner_app.py for why this is split out rather than
+  # added to the main backend image.
+  sandbox-runner:
+    build:
+      context: ../delite-agent-service
+      dockerfile: backend/Dockerfile.sandbox_runner
+    ports:
+      - "8100:8100"
+    environment:
+      # Docker-outside-of-Docker: docker run -v below is executed by the
+      # HOST's daemon (via the socket mount), which resolves bind-mount
+      # sources against the real host filesystem — not this container's own
+      # /tmp. SANDBOX_SCRATCH_DIR is where this process itself reads/writes;
+      # SANDBOX_SCRATCH_HOST_DIR is the same directory's real path on the
+      # host, for the -v flags. Confirmed live during development: without
+      # this split, every sandboxed run silently got empty mounts.
+      - SANDBOX_SCRATCH_DIR=/scratch
+      - SANDBOX_SCRATCH_HOST_DIR=${PWD}/../delite-agent-service/storage/_sandbox_scratch
+    volumes:
+      - ../delite-agent-service/backend:/app/backend
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${PWD}/../delite-agent-service/storage/_sandbox_scratch:/scratch
 
   celery_worker:
     build:
