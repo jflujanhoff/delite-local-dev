@@ -129,6 +129,11 @@ services:
       dockerfile: backend/Dockerfile.sandbox_runner
     ports:
       - "8100:8100"
+    # Needed for INTERNAL_API_KEY_CURRENT (this service now requires it on
+    # /run — see backend/sandbox_runner_app.py) and to keep Settings'
+    # defaults consistent with the other services, same as backend/
+    # celery_worker below.
+    env_file: ../delite-agent-service/.env
     environment:
       # Docker-outside-of-Docker: docker run -v below is executed by the
       # HOST's daemon (via the socket mount), which resolves bind-mount
@@ -139,6 +144,13 @@ services:
       # this split, every sandboxed run silently got empty mounts.
       - SANDBOX_SCRATCH_DIR=/scratch
       - SANDBOX_SCRATCH_HOST_DIR=${PWD}/../delite-agent-service/storage/_sandbox_scratch
+      # Under the already-mounted, already-persisted /scratch — not the
+      # relative default (storage/_sandbox), which resolves to this
+      # container's own ephemeral filesystem layer (nothing else mounts
+      # storage/ here) and silently loses every execution log on restart.
+      # Same class of host/container path confusion as the scratch-dir
+      # split above, just for logging instead of the docker run mounts.
+      - SANDBOX_LOG_DIR=/scratch/_sandbox_log
     volumes:
       - ../delite-agent-service/backend:/app/backend
       - /var/run/docker.sock:/var/run/docker.sock
