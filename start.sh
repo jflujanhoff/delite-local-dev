@@ -47,7 +47,7 @@ usage() {
   echo "---------------------------------------------------------------------"
 }
 
-BACKEND_SERVICES="postgres redis ministack ministack-init backend celery_worker flower hr_redis hr_service hr_celery_worker"
+BACKEND_SERVICES="postgres redis ministack ministack-init backend celery_worker flower hr_redis hr_service hr_celery_worker sandbox-runner"
 FRONTEND_SERVICE="frontend"
 
 TAIL_LOGS=false
