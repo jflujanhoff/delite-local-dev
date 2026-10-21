@@ -1,0 +1,61 @@
+# OpenSandbox server config for the agent's code workspace (local dev only).
+#
+# The backend's run_code tool creates one sandbox per conversation through
+# this server (backend/agent/tools/sandbox/providers/opensandbox.py). The
+# server is the only service here besides sandbox-runner with the Docker
+# socket; sandboxes are started by the host daemon on Docker's default bridge,
+# never on this stack's network, so they can't reach postgres/redis/backend.
+#
+# Docker runtime = dev-only boundary: execd (the in-sandbox command daemon)
+# runs as root with no auth on the Docker runtime — secure_access is
+# Kubernetes-only. Fine on a laptop with egress denied and no secrets inside;
+# never use this runtime in production. See ../../sandbox-spike-opensandbox.md.
+#
+# api_key is not set here: it comes from OPENSANDBOX_SERVER_API_KEY in
+# ../delite-agent-service/.env, the same value the backend sends.
+
+[server]
+host = "0.0.0.0"
+port = 8090
+max_sandbox_timeout_seconds = 7200
+
+[proxy]
+# The server sits on this stack's network and sandboxes on Docker's bridge,
+# so it reaches them through host-published ports, not container IPs.
+resolve_internal = false
+
+[log]
+level = "INFO"
+
+[runtime]
+type = "docker"
+execd_image = "opensandbox/execd:v1.1.0"
+
+[storage]
+# No bind mounts from sandbox create requests — files go in and out through
+# the files API only.
+allowed_host_paths = ["/nonexistent-no-binds"]
+
+[store]
+type = "sqlite"
+path = "/var/lib/opensandbox/opensandbox.db"
+
+[docker]
+network_mode = "bridge"
+host_ip = "host.docker.internal"
+# Loopback only: each sandbox publishes an unauthenticated execd port, which
+# must never be reachable from the LAN.
+publish_host = "127.0.0.1"
+port_range_min = 42000
+port_range_max = 42600
+drop_capabilities = ["AUDIT_WRITE", "MKNOD", "NET_ADMIN", "NET_RAW", "SYS_ADMIN", "SYS_MODULE", "SYS_PTRACE", "SYS_TIME", "SYS_TTY_CONFIG", "SETPCAP", "SYS_CHROOT", "NET_BIND_SERVICE"]
+no_new_privileges = true
+pids_limit = 512
+
+[ingress]
+mode = "direct"
+
+[egress]
+image = "opensandbox/egress:v1.1.7"
+mode = "dns+nft"
+readiness_timeout_seconds = 30.0
