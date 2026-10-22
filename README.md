@@ -52,3 +52,21 @@ File storage uses the same `boto3`/S3 code path as production, pointed at MiniSt
 | Postgres | localhost:5432 (`delite_hr` + `delite_hr_apps` databases) |
 | Redis (agent-service) | localhost:6379 |
 | Redis (hr-service) | localhost:6381 |
+| OpenSandbox (code workspace) | localhost:8090 (loopback only) |
+
+## Code workspace (optional)
+
+The agent's `run_code`, `workspace_add_document` and `workspace_save_file` tools run model-written Python in one sandbox per conversation, through the `opensandbox` service. They are off unless `../delite-agent-service/.env` sets:
+
+```
+CODE_WORKSPACE_PROVIDER=opensandbox
+OPENSANDBOX_SERVER_API_KEY=<any long random string>
+```
+
+Build the image the sandboxes run (once, and again after changing its `requirements.txt`):
+
+```bash
+../delite-agent-service/backend/agent/tools/sandbox/workspace_image/build.sh
+```
+
+This is a **local-only** setup: on OpenSandbox's Docker runtime, code inside a sandbox can reach a root daemon in its own container. Network access is denied and no secrets go in, which is fine on a laptop, but production uses a different provider. See `opensandbox/config.toml` for the layout.

@@ -156,6 +156,30 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${PWD}/../delite-agent-service/storage/_sandbox_scratch:/scratch
 
+  # Code workspace for the agent's run_code tool: one sandbox per
+  # conversation, created on demand through this server's API (see
+  # opensandbox/config.toml for the network/security layout and why this
+  # Docker runtime is a dev-only boundary). The backend reaches it at
+  # http://opensandbox:8090 and sends every sandbox call through it
+  # (use_server_proxy), so nothing else needs the per-sandbox ports.
+  opensandbox:
+    # Pinned digest of opensandbox/server:release-1.1.1. Re-resolve
+    # deliberately: docker pull opensandbox/server:<tag> &&
+    # docker inspect --format='{{index .RepoDigests 0}}' opensandbox/server:<tag>
+    image: opensandbox/server@sha256:bcd5f264101262cebfa7e1ff9cd0424403e42f31a6596e4364cf90d8cb5c936b
+    ports:
+      - "127.0.0.1:8090:8090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # For OPENSANDBOX_SERVER_API_KEY — the same value the backend sends.
+    env_file: ../delite-agent-service/.env
+    environment:
+      - SANDBOX_CONFIG_PATH=/etc/opensandbox/config.toml
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./opensandbox/config.toml:/etc/opensandbox/config.toml:ro
+      - opensandbox_data:/var/lib/opensandbox
+
   celery_worker:
     build:
       context: ../delite-agent-service
@@ -283,3 +307,4 @@ volumes:
   ministack_data:
   frontend_node_modules:
   frontend_next_cache:
+  opensandbox_data:
